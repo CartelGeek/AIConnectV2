@@ -1,0 +1,154 @@
+enum UserStatus {
+    INVITED
+    VERIFIED
+}
+
+model User {
+    id                String             @id @default(uuid())
+    name              String?
+    email             String?            @unique
+    pictureUrl        String?            @default('https://i.imgur.com/ZdJSK3Y.jpeg')
+    tokenInvitation   String?
+
+    stripeCustomerId  String?
+
+    status            UserStatus         @default(VERIFIED)
+
+    // this is the role of the user for the application
+    globalRole        String             @default('USER')
+    password          String?            @password @omit
+    createdAt         DateTime           @default(now())
+    updatedAt         DateTime           @updatedAt @default(now())
+
+    organizationRoles OrganizationRole[]
+
+    @@auth()
+    @@allow("all", auth().id == this.id)
+    @@allow('all', auth().globalRole == 'ADMIN')
+
+    //we only allow that user to register if they don't create an admin role
+    @@allow("create", globalRole != 'ADMIN')
+    @@allow("read", true)
+}
+
+model Agent {
+
+    id                         String         @id @default(uuid())
+    name                       String
+    status                     String
+    whatsappIntegrationDetails Json?
+    configuration              Json?
+
+    organizationId             String
+    organization               Organization?  @relation(fields: [organizationId], references: [id], name: "organization")
+
+    conversations              Conversation[] @relation("agent")
+    createdAt                  DateTime       @default(now())
+    updatedAt                  DateTime       @updatedAt @default(now())
+    @@allow("all", true)
+}
+
+model Template {
+
+    id             String        @id @default(uuid())
+    name           String
+    content        String
+
+    organizationId String
+    organization   Organization? @relation(fields: [organizationId], references: [id], name: "organization")
+
+    messages       Message[]     @relation("template")
+    createdAt      DateTime      @default(now())
+    updatedAt      DateTime      @updatedAt @default(now())
+    @@allow("all", true)
+}
+
+model Conversation {
+
+    id                  String        @id @default(uuid())
+    status              String
+    customerPhoneNumber String
+    isResolved          Boolean
+
+    agentId             String
+    agent               Agent?        @relation(fields: [agentId], references: [id], name: "agent")
+    organizationId      String
+    organization        Organization? @relation(fields: [organizationId], references: [id], name: "organization")
+
+    messages            Message[]     @relation("conversation")
+    createdAt           DateTime      @default(now())
+    updatedAt           DateTime      @updatedAt @default(now())
+    @@allow("all", true)
+}
+
+model Message {
+
+    id             String        @id @default(uuid())
+    content        String
+    isFromAgent    Boolean
+
+    conversationId String
+    conversation   Conversation? @relation(fields: [conversationId], references: [id], name: "conversation")
+    templateId     String?
+    template       Template?     @relation(fields: [templateId], references: [id], name: "template")
+
+    createdAt      DateTime      @default(now())
+    updatedAt      DateTime      @updatedAt @default(now())
+    @@allow("all", true)
+}
+
+model Subscription {
+
+    id             String        @id @default(uuid())
+    plan           String
+    status         String
+    currentUsage   Float
+    usageLimit     Float
+
+    organizationId String
+    organization   Organization? @relation(fields: [organizationId], references: [id], name: "organization")
+
+    createdAt      DateTime      @default(now())
+    updatedAt      DateTime      @updatedAt @default(now())
+    @@allow("all", true)
+}
+
+model Organization {
+    id               String             @id @default(uuid())
+    name             String
+    pictureUrl       String?            @default('https://i.imgur.com/BgkFiid.jpeg')
+
+    stripeCustomerId String?
+
+    createdAt        DateTime           @default(now())
+    updatedAt        DateTime           @updatedAt @default(now())
+    roles            OrganizationRole[]
+
+    agents           Agent[]            @relation("organization")
+    templates        Template[]         @relation("organization")
+    conversations    Conversation[]     @relation("organization")
+    subscriptions    Subscription[]     @relation("organization")
+
+    @@allow('all', auth().globalRole == 'ADMIN')
+    @@allow('all', roles?[user == auth() && name == 'owner'])
+    @@allow('read', roles?[user == auth()])
+}
+
+model OrganizationRole {
+    id             String       @id @default(uuid())
+    name           String
+    createdAt      DateTime     @default(now())
+    updatedAt      DateTime     @updatedAt @default(now())
+
+    userId         String       @default(auth().id)
+    user           User         @relation(fields: [userId], references: [id])
+    organizationId String
+    organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+    @@allow('all', auth().globalRole == 'ADMIN')
+    @@allow('all', organization.roles?[user == auth() && name == 'owner'])
+    @@allow('create', organization.roles?[user == auth()] && name != 'owner')
+    @@allow('read', organization.roles?[user == auth()])
+    @@allow('delete', auth() == user)
+}
+
